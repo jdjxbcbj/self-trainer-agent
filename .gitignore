@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 本地配置与密钥（含 LLM_API_KEY，勿提交）
+.env
+.env.local
+
+# SQLite 用户画像数据库（运行时生成，含用户数据，勿提交）
+*.db
+profiles.db

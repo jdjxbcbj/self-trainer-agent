@@ -1,6 +1,6 @@
-# safe-trainer 多 Agent 后端 · 架构与开发规划 v3
+# safe-trainer 多 Agent 后端 · 架构与开发规划 v4
 
-> 版本：v3（从「王阿姨催婚 / 关系维护意愿」同步为「安全对线训练场」+ 补数据层章节）
+> 版本：v4（修对峙值涨落反向 bug + 补 judge_agent 归属 + 统一对峙值类型；在 v3 基础上）
 > 状态：**待最终确认**
 > 日期：2026-08-31
 > 定位：回答「要做哪些模块、职责边界、接口长什么样、数据怎么存、按什么顺序开发、怎么并行开发」。批准后即作为开发依据。
@@ -204,10 +204,12 @@ opening（开场） → pressure（施压对峙） → [用户回应]
 | 红线一票否决 | 命中红线 → `total_score ≤ 30` 且记入 `red_line_hits` | 不叠加普通扣分 |
 | 暴击（crit） | 单回合 `total_score ≥ 85` 且 `red_line_hits` 为空 | 计 1 次暴击 |
 | 对峙值起始 | `50`（int，clamp 到 [0,100]） | |
-| 对峙值涨落 | 红线 `+25`；`<40 → +10`；`40~69 → +2`；`70~84 → −10`；暴击额外 `−10` | 每回合结算一次 |
+| 对峙值涨落 | 红线 `+25`；`score<40 → +10`；`40≤score<85 → −5`；暴击（≥85）→ `−15`（含额外 −10） | **按本回合表现**，与当前对峙值无关 |
 | NPC 台词层级 | `≥70 high` / `45~69 mid` / `<45 low` / `≤25 yield` | |
 | 通关 resolve | 累计暴击数 ≥ `critsToPass` 且 对峙值 ≤ 40 | `critsToPass` 来自 SDB |
 | 失控 deadlock | 对峙值 ≥ 85，或命中 `r-violence`（暴力红线） | |
+
+> ⚠️ **涨落方向**：对峙值变化取决于**本回合表现**（得分 / 红线 / 暴击），**不是当前对峙值区间**。v3 曾误写成「按当前区间」（`<40 → +10`、`70~84 → −10`），导致局势越缓越反弹、`resolve` 永远不可达——已修正，冻结前务必用模拟输入推演一遍状态机（见 §7.2 Wave 0）。
 
 ---
 
@@ -307,7 +309,7 @@ class JudgeAgent:        # 🟡 同步评分口径
     def judge(self, scenario, audience, history, user_response) -> ScoreResult: ...
 
 class RoleplayAgent:     # 🟡 换对峙值模型
-    def reply(self, scenario, audience, history, user_response, confrontation) -> tuple[str, float]: ...
+    def reply(self, scenario, audience, history, user_response, confrontation) -> tuple[str, int]: ...
     # 返回 (NPC 回应, 下一轮对峙值)
 
 class TeachingAgent:     # 🟡 换合规提示
@@ -320,7 +322,7 @@ class ReviewAgent:       # ✅ 结构复用，口径同步
 class SessionMemory:     # 🟡 扩展
     def add_message(self, session_id, role, content): ...
     def get_context(self, session_id, limit=None) -> list: ...
-    def get_confrontation(self, session_id) -> float: ...
+    def get_confrontation(self, session_id) -> int: ...
     def set_confrontation(self, session_id, value): ...
     def get_stage(self, session_id) -> str: ...
     def set_stage(self, session_id, stage): ...
@@ -473,10 +475,12 @@ class Storage:
 
 ### 7.2 开发波浪（Wave）
 
-**Wave 0 —— 主控串行（冻结契约 + 同步场景 + 冻结判定参数）**
+**Wave 0 —— 主控串行（冻结契约 + 同步场景 + 冻结判定参数 + 改评分 Agent）**
 - 重写 `contracts.py`（数据类 + 枚举 + 方法签名，即 §5）。
 - 同步 `scenario_store.py` 为 6 安全场景（SDB）、`strategy_kb.py` 为 GSB+RSB，并**冻结 §3.4 判定参数**（暴击/对峙值/红线）——这些参数子 Agent 只读。
+- 改造 `judge_agent.py`：从「调 LLM 用 strategy prompt 打分」改为「消费 GSB+RSB 确定性打分」（默认规则库优先，保留 LLM 兜底接口；评分口径最终以 §9 第 1 项为准）。
 - 写 `storage.py` 骨架（§6.4 签名 + 建表 + migrate 桩）。
+- 用几组模拟输入**推演对峙值状态机**（普通合规 / 暴击 / 红线 / 顶撞各一组），确认 `resolve` 与 `deadlock` 均可达、无震荡后再冻结参数。
 - 产出：所有子 Agent 开工前必读的契约。
 
 **Wave 1 —— 子 Agent 并行（6 个，每个只写一个文件）**
@@ -490,7 +494,7 @@ class Storage:
 | S5 教学 | `teaching_agent.py` | contracts, strategy_kb, knowledge_base(S1，接口约定即可) |
 | S6 复盘 | `review_agent.py` | contracts, storage(S3，接口约定即可) |
 
-> 说明：`storage.py`（数据层基座）从原 S2 拆出独立成一个子 Agent，避免「一人扛 memory + storage 两文件」的单点风险；`router.py` 移入 Wave 2（见下），因为它要真实调度所有 Agent 才能做端到端验证，仅靠签名单测不充分。
+> 说明：`storage.py`（数据层基座）从原 S2 拆出独立成一个子 Agent，避免「一人扛 memory + storage 两文件」的单点风险；`judge_agent.py` 归主控 Wave 0 改造（它消费 GSB/RSB、与评分口径强耦合，不宜并行）；`router.py` 移入 Wave 2（见下），因为它要真实调度所有 Agent 才能做端到端验证，仅靠签名单测不充分。
 
 每个子 Agent 的**统一开工要求**：
 1. 先读 `contracts.py`、`config.py`、`scenario_store.py`、`strategy_kb.py`，以及 §3.4 判定参数。

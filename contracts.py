@@ -2,7 +2,7 @@
 """
 contracts.py - 接口契约（唯一真源）
 
-本项目「数据形状 + 枚举常量」的唯一定义处。
+本项目「数据形状 + 枚举常量 + 判定参数」的唯一定义处。
 所有模块 import 这里的数据类与常量，保证接口一致。
 
 ⚠️ 约束：
@@ -10,10 +10,15 @@ contracts.py - 接口契约（唯一真源）
 - 只有主控（编排本项目的对话）允许修改本文件。
 
 Python 3.9 兼容：类型注解用 typing 模块（Optional 而非 X | Y）。
+
+本版已从「王阿姨催婚 / 关系维护意愿 4 档」同步为「安全对线训练场」：
+- 旧 CONSTRAINTS（关系维护意愿）→ 训练身份 Audience（minor/adult）
+- 旧 DEFAULT_PERSONA_STATE（情绪/耐心/被转移次数）→ 对峙值 confrontation_value
+- 新增判定参数（§3.4 冻结值）+ is_crit / compute_confrontation_delta 纯函数
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 
 # ============================================================
@@ -21,22 +26,104 @@ from typing import Dict, List, Optional, Any
 # ============================================================
 class Stage:
     """对话阶段（编排路由状态机的状态集合，规则判定，非 LLM）"""
-    OPENING = "opening"       # 寒暄开场
-    PRESSURE = "pressure"     # 催婚施压（绕回/升级都仍属施压阶段）
-    RESOLVE = "resolve"       # 划界成功，冲突收敛
-    DEADLOCK = "deadlock"     # 情绪失控 / 僵持
+    OPENING = "opening"       # 开场（NPC 先起头）
+    PRESSURE = "pressure"     # 施压对峙（占据会话主体）
+    RESOLVE = "resolve"       # 通关（优秀/及格，见 §3.4 终局条件）
+    DEADLOCK = "deadlock"     # 失控（对峙值≥85 或命中暴力红线）
     END = "end"               # 会话结束（触发复盘 Agent）
 
 
 # ============================================================
-# 约束枚举（关系维护意愿 4 档光谱）
+# 训练身份枚举（替代旧「关系维护意愿 4 档」）
 # ============================================================
-CONSTRAINTS = {
-    "want_maintain": "想维持关系",
-    "endure_but_record": "能忍但记账",
-    "dont_care": "无所谓",
-    "want_cutoff": "想断联",
+class Audience:
+    """训练身份"""
+    MINOR = "minor"           # 青少年：仅进入 minorSafe 场景
+    ADULT = "adult"           # 成年人：全场景
+
+
+AUDIENCES = {
+    Audience.MINOR: "青少年",
+    Audience.ADULT: "成年人",
 }
+
+
+# ============================================================
+# 对峙值层级（NPC 台词层级）
+# ============================================================
+class Tier:
+    """NPC 台词层级（由对峙值推导，yield 优先级最高，见 tier_for）"""
+    YIELD = "yield"           # ≤25：服软
+    LOW = "low"               # 26~44
+    MID = "mid"               # 45~69
+    HIGH = "high"             # ≥70
+
+
+def tier_for(confrontation_value: int) -> str:
+    """由对峙值推导 NPC 台词层级（§3.4 冻结：yield 优先，不与 low 重叠）。
+
+    返回 Tier 常量之一。
+    """
+    if confrontation_value <= YIELD_THRESHOLD:
+        return Tier.YIELD
+    if confrontation_value < LOW_THRESHOLD:
+        return Tier.LOW
+    if confrontation_value < MID_THRESHOLD:
+        return Tier.MID
+    return Tier.HIGH
+
+
+# ============================================================
+# 判定参数（§3.4 冻结值；子 Agent 只读，不得各写各的）
+# ============================================================
+# 对峙值
+CONFRONTATION_START = 50       # 单局起始
+CONFRONTATION_MIN = 0
+CONFRONTATION_MAX = 100
+
+# 暴击（crit）
+CRIT_THRESHOLD = 85            # 单回合 total_score ≥ 85 且无红线 → 暴击
+
+# 红线一票否决
+RED_LINE_CAP = 30              # 命中红线 → total_score 上限 30（不叠加普通扣分）
+
+# 对峙值涨落（按本回合表现，与当前对峙值无关）
+CONFRONT_DELTA = {
+    "red_line": 25,            # 命中红线 → +25
+    "crit": -15,               # 暴击（≥85 且无红线）→ -15（含额外 -10）
+    "low": 10,                 # score < 40 → +10
+    "mid": -5,                 # 40 ≤ score < 85 → -5
+}
+
+# NPC 台词层级阈值
+YIELD_THRESHOLD = 25           # ≤25 → yield
+LOW_THRESHOLD = 45             # <45 → low（26~44）
+MID_THRESHOLD = 70             # <70 → mid（45~69），≥70 → high
+
+# 终局条件
+RESOLVE_CONFRONT = 40          # 优秀通关：对峙值 ≤ 40
+CRITS_TO_PASS_DEFAULT = 2      # 默认通关所需暴击数（场景可覆盖）
+DEADLOCK_CONFRONT = 85         # 对峙值 ≥ 85 → 失控
+ROUND_LIMIT = 20               # 回合上限（≥10，保证「及格通关」可达）
+
+
+def is_crit(total_score: int, red_line_hits: List[str]) -> bool:
+    """是否暴击：单回合 total_score ≥ CRIT_THRESHOLD 且未命中红线（§3.4）。"""
+    return not red_line_hits and total_score >= CRIT_THRESHOLD
+
+
+def compute_confrontation_delta(total_score: int, red_line_hits: List[str]) -> int:
+    """对峙值涨落（§3.4 冻结规则）：按本回合表现，与当前对峙值无关。
+
+    返回 int（+25 / -15 / +10 / -5），调用方负责 clamp 到 [CONFRONTATION_MIN, CONFRONTATION_MAX]。
+    """
+    if red_line_hits:
+        return CONFRONT_DELTA["red_line"]
+    if total_score >= CRIT_THRESHOLD:
+        return CONFRONT_DELTA["crit"]
+    if total_score < 40:
+        return CONFRONT_DELTA["low"]
+    return CONFRONT_DELTA["mid"]
 
 
 # ============================================================
@@ -45,27 +132,28 @@ CONSTRAINTS = {
 @dataclass
 class SessionMessage:
     """一条会话消息"""
-    role: str            # "user"（我） 或 "ai"（王阿姨）
+    role: str            # "user"（用户） 或 "ai"（NPC）
     content: str
 
 
 @dataclass
 class ScoreResult:
     """评分 Agent 的回合级评分结果"""
-    total_score: int                      # 0-100
-    dimensions: Dict[str, int]            # {维度中文名: 0-100}
-    feedback: str                         # 个性化反馈
-    suggested_strategy: str               # 下一轮推荐策略（教学 Agent 上线后由其接管）
+    total_score: int                       # 0-100
+    dimensions: Dict[str, int]             # {维度中文名: 0-100}
+    red_line_hits: List[str]               # 命中的红线 ID（可空）
+    feedback: str                          # 个性化反馈
+    suggested_strategy: str                # 推荐策略 / 合规替代句
 
 
 @dataclass
 class TurnResult:
     """一次用户回合的完整返回（编排路由汇总后返回）"""
     score: ScoreResult
-    ai_reply: str                         # 王阿姨的回应（由扮演 Agent 生成）
-    next_persona_state: Dict[str, Any]    # 下一轮 persona_state
-    next_stage: str                       # 下一阶段（Stage 常量之一）
-    teaching_hint: Optional[str] = None   # 实时提示（教学 Agent，可空）
+    ai_reply: str                          # NPC 回应（由扮演 Agent 生成）
+    confrontation_value: int               # 下一轮对峙值 0~100
+    next_stage: str                        # 下一阶段（Stage 常量之一）
+    teaching_hint: Optional[str] = None    # 实时提示（教学 Agent，可空）
 
 
 @dataclass
@@ -75,7 +163,7 @@ class TeachingCard:
     when: str         # 什么时候用
     how: str          # 怎么用（含 1 个例子）
     why: str          # 为什么
-    constraint: str   # 适用约束 ID
+    scenario_id: str  # 适用场景 ID
     example: str      # 话术示例
 
 
@@ -83,17 +171,7 @@ class TeachingCard:
 class ReviewResult:
     """复盘 Agent 的会话级总结结果"""
     summary: str                       # 会话总结
-    goal_achieved: bool                # 是否达成该约束目标
+    goal_achieved: bool                # 是否通关
     achievement_score: int             # 会话级达成度 0-100
     weak_points: List[str]             # 薄弱点列表
     profile_update: Dict[str, Any]     # 写入用户画像的增量
-
-
-# ============================================================
-# 默认 persona_state（动态状态默认值；具体场景可在 scenario_store 覆盖）
-# ============================================================
-DEFAULT_PERSONA_STATE = {
-    "emotion": 0.3,        # 当前情绪 0~1
-    "patience": 0.6,       # 当前耐心 0~1，越低越容易绕回催婚
-    "deflect_count": 0,    # 已被转移话题成功的次数
-}

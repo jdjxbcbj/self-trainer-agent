@@ -10,3 +10,6 @@ __pycache__/
 # SQLite 用户画像数据库（运行时生成，含用户数据，勿提交）
 *.db
 profiles.db
+
+# Next.js 残留（frontend/ 仅含 next-env.d.ts 自动生成文件，已废弃；真实前端在仓库外的 safety-confrontation-game/）
+frontend/

@@ -179,7 +179,7 @@ v2 的「约束→评分维度权重」替换为**通用安全评分维度 + 红
 ### 3.4 对峙值（`confrontation_value`）与状态机
 
 - 单局从 **50** 起跳。用户回应越合规/降温，对峙值下降；越顶撞/空洞，对峙值上升；命中红线直接跳涨。
-- NPC 台词按对峙值分层：`≥60 → high`，`40~60 → mid`，`<40 → low`，持续走低进入 `yield`（服软）。
+- NPC 台词按对峙值分层：`≥70 → high`，`45~69 → mid`，`<45 → low`，`≤25 → yield`（服软）。
 - 阶段状态机（规则判定，非 LLM）：
 
 ```
@@ -195,6 +195,19 @@ opening（开场） → pressure（施压对峙） → [用户回应]
 ```
 
 阶段判定仍用**规则**（对峙值阈值 + 红线 + 暴击数 + round_limit），LLM 分类器后置。
+
+**判定参数（默认值，Wave 0 冻结前可微调；子 Agent 实现以此为准，不得各写各的）**：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| 总分计算 | `clamp(Σ命中正向维度权重 − Σ命中负向扣分, 0, 100)` | 正向权重见 §3.3；负向 -18 / -12 |
+| 红线一票否决 | 命中红线 → `total_score ≤ 30` 且记入 `red_line_hits` | 不叠加普通扣分 |
+| 暴击（crit） | 单回合 `total_score ≥ 85` 且 `red_line_hits` 为空 | 计 1 次暴击 |
+| 对峙值起始 | `50`（int，clamp 到 [0,100]） | |
+| 对峙值涨落 | 红线 `+25`；`<40 → +10`；`40~69 → +2`；`70~84 → −10`；暴击额外 `−10` | 每回合结算一次 |
+| NPC 台词层级 | `≥70 high` / `45~69 mid` / `<45 low` / `≤25 yield` | |
+| 通关 resolve | 累计暴击数 ≥ `critsToPass` 且 对峙值 ≤ 40 | `critsToPass` 来自 SDB |
+| 失控 deadlock | 对峙值 ≥ 85，或命中 `r-violence`（暴力红线） | |
 
 ---
 
@@ -272,7 +285,7 @@ class ScoreResult:
 class TurnResult:
     score: ScoreResult
     ai_reply: str
-    confrontation_value: float   # 下一轮对峙值 0~100
+    confrontation_value: int     # 下一轮对峙值 0~100
     next_stage: str
     teaching_hint: Optional[str] = None
 
@@ -369,7 +382,7 @@ CREATE TABLE users (
 -- sessions：一次训练会话
 CREATE TABLE sessions (
     session_id        TEXT PRIMARY KEY,
-    user_id           TEXT NOT NULL,
+    user_id           TEXT NOT NULL REFERENCES users(user_id),
     scenario_id       TEXT NOT NULL,
     audience          TEXT NOT NULL,
     status            TEXT NOT NULL DEFAULT 'active',  -- active / ended
@@ -384,14 +397,14 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 -- turns：每个回合
 CREATE TABLE turns (
     turn_id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id           TEXT NOT NULL,
+    session_id           TEXT NOT NULL REFERENCES sessions(session_id),
     turn_index           INTEGER NOT NULL,
     user_response        TEXT NOT NULL,
     ai_reply             TEXT,
     score_total          INTEGER,
     score_dimensions     TEXT,      -- JSON：{维度中文名: 分数}
     red_line_hits        TEXT,      -- JSON：命中的红线 ID 列表
-    confrontation_value  REAL,      -- 该回合结束后的对峙值
+    confrontation_value  INTEGER,   -- 该回合结束后的对峙值
     persona_state        TEXT,      -- JSON：角色动态状态快照
     teaching_hint        TEXT,
     next_stage           TEXT,
@@ -399,6 +412,8 @@ CREATE TABLE turns (
 );
 CREATE INDEX idx_turns_session ON turns(session_id);
 ```
+
+> 注：SQLite 外键默认不强制，需在连接时开启 `PRAGMA foreign_keys = ON`（由 `storage.py` 统一处理）。
 
 ### 6.3 数据生命周期与写入点
 
@@ -458,32 +473,35 @@ class Storage:
 
 ### 7.2 开发波浪（Wave）
 
-**Wave 0 —— 主控串行（冻结契约 + 同步场景）**
+**Wave 0 —— 主控串行（冻结契约 + 同步场景 + 冻结判定参数）**
 - 重写 `contracts.py`（数据类 + 枚举 + 方法签名，即 §5）。
-- 同步 `scenario_store.py` 为 6 安全场景（SDB）、`strategy_kb.py` 为 GSB+RSB（主控自己做，避免和子 Agent 抢文件）。
+- 同步 `scenario_store.py` 为 6 安全场景（SDB）、`strategy_kb.py` 为 GSB+RSB，并**冻结 §3.4 判定参数**（暴击/对峙值/红线）——这些参数子 Agent 只读。
 - 写 `storage.py` 骨架（§6.4 签名 + 建表 + migrate 桩）。
 - 产出：所有子 Agent 开工前必读的契约。
 
-**Wave 1 —— 子 Agent 并行（6 个同时）**
+**Wave 1 —— 子 Agent 并行（6 个，每个只写一个文件）**
 
 | 子 Agent | 负责文件 | 依赖（只读） |
 |---|---|---|
 | S1 知识库 | `knowledge_base.py` | contracts, scenario_store |
-| S2 记忆 + 数据层 | `memory.py`（扩展）+ `storage.py`（实现） | contracts, config |
-| S3 扮演 | `roleplay_agent.py` | contracts, scenario_store, config |
-| S4 教学 | `teaching_agent.py` | contracts, strategy_kb, knowledge_base(S1，接口约定即可) |
-| S5 复盘 | `review_agent.py` | contracts, storage(S2，接口约定即可) |
-| S6 路由 | `router.py` | contracts（只读所有签名） |
+| S2 记忆 | `memory.py` | contracts, config |
+| S3 数据层 | `storage.py` | contracts, config |
+| S4 扮演 | `roleplay_agent.py` | contracts, scenario_store, config |
+| S5 教学 | `teaching_agent.py` | contracts, strategy_kb, knowledge_base(S1，接口约定即可) |
+| S6 复盘 | `review_agent.py` | contracts, storage(S3，接口约定即可) |
+
+> 说明：`storage.py`（数据层基座）从原 S2 拆出独立成一个子 Agent，避免「一人扛 memory + storage 两文件」的单点风险；`router.py` 移入 Wave 2（见下），因为它要真实调度所有 Agent 才能做端到端验证，仅靠签名单测不充分。
 
 每个子 Agent 的**统一开工要求**：
-1. 先读 `contracts.py`、`config.py`、`scenario_store.py`、`strategy_kb.py`。
+1. 先读 `contracts.py`、`config.py`、`scenario_store.py`、`strategy_kb.py`，以及 §3.4 判定参数。
 2. 只实现自己那份签名，不碰别人文件，不改 `contracts.py`。
 3. 遵循样板规范：中文注释、`[模块名] 步骤N` 日志、模拟模式兜底。
 
 **Wave 2 —— 主控串行（集成 + 验证）**
-- 把 `main.py` 的 `TrainerSystem` 接上 `storage.py`（`handle_turn` 落 turns、`end_session` 落 sessions）。
+- 实现 `router.py`：阶段状态机（§3.4 判定参数）+ 真实调度各 Agent + 接 `storage`。
+- 把 `main.py` 的 `TrainerSystem` 接上 `router` 与 `storage`（`handle_turn` 落 turns、`end_session` 落 sessions），保留 `score()` 兼容。
 - 更新 `cli.py`：场景选项换成 6 安全场景 + 身份选择；一次回合 = 评分 + 扮演 + 教学提示；会话结束触发复盘 + 落库。
-- 端到端 CLI 测试（沿用现有测试脚本 + 补数据层落库校验）。
+- 端到端 CLI 测试：补数据层落库校验 + 暴击/通关/红线用例。
 
 **Wave 3 —— 可选，后置**
 - HTTP API 层（FastAPI）暴露给前端；单元测试；知识库 RAG；数据层查询/分析接口。
@@ -510,3 +528,6 @@ class Storage:
 4. **`profile.py` 去留**：并入 `storage.py`（画像存 users 表）后，`profile.py` 是删还是留薄封装？（我建议删，避免两处 DB 连接）
 5. **`main.py` 的 `ScoreSystem.score()` 是否保留向后兼容**（保留还是直接重构为 `TrainerSystem`）？（我建议保留一个兼容方法）
 6. **训练身份分流**：未成年人评分口径是否本期就与成年人分流，还是先只做「场景隔离（minorSafe）」，评分共用？（我建议先只做场景隔离）
+7. **爽感循环归属**：PRD 把「暴击→连击→等级→徽章」列为 MVP 循环，但后端本期不产生 XP/等级/徽章数据。建议**爽感由前端本地 demo 承担，后端本期只产出「暴击判定」所需的对峙值与评分，不落爽感字段**；联调时再决定是否入库。是否认可？（本项需同步改 PRD）
+8. **判定参数默认值**：§3.4 的暴击阈值（≥85）、对峙值涨落、红线一票否决（≤30）、yield 阈值（≤25）是默认值，是否认可或需调整？必须在 Wave 0 冻结。
+9. **数据用途与删除策略**：数据明文落盘前，建议把「数据用途声明 / 导出与删除策略」显式定下来（哪怕本期只做本地单机、不做脱敏），避免将来上服务端时的迁移与合规成本。是否本期先写一版说明？

@@ -1,7 +1,7 @@
-# safe-trainer 多 Agent 后端 · 架构与开发规划 v6
+# safe-trainer 多 Agent 后端 · 架构与开发规划 v7
 
-> 版本：v6（补 round_limit 冻结 + NPC 台词优先级 + 及格语义澄清 + 4 项默认值拍板；在 v5 基础上）
-> 状态：**9 项决策全部拍板，可开工（Wave 0）**
+> 版本：v7（补「前后端数值分叉」已知事项 + Wave 0 落地校正；在 v6 基础上）
+> 状态：**Wave 0 完成；9 项决策全部拍板；可开工 Wave 1（前后端数值分叉待联调统一）**
 > 日期：2026-08-31
 > 定位：回答「要做哪些模块、职责边界、接口长什么样、数据怎么存、按什么顺序开发、怎么并行开发」。批准后即作为开发依据。
 > 配套：《PRD.md》管「做什么、为什么」，本文件管「怎么做」。
@@ -214,6 +214,8 @@ opening（开场） → pressure（施压对峙） → [用户回应]
 > ⚠️ **涨落方向**：对峙值变化取决于**本回合表现**（得分 / 红线 / 暴击），**不是当前对峙值区间**。v3 曾误写成「按当前区间」（`<40 → +10`、`70~84 → −10`），导致局势越缓越反弹、`resolve` 永远不可达——已修正，冻结前务必用模拟输入推演一遍状态机（见 §7.2 Wave 0）。
 
 > ⚠️ **round_limit 与及格通关的关系**：`round_limit = 20` 必须 ≥ 10——「普通合规」每回合 −5，从 50 压到 0 需整 10 回合；若 `round_limit < 10`，「及格 resolve」永远走不到、先触发 round_limit 兜底。冻结时务必保证 `round_limit ≥ 10`。
+
+> ⚠️ **前后端数值分叉（已知事项）**：前端 demo 的判定参数与本节不同——暴击 `≥72`（本节 `≥85`）、对峙值涨落 `−30/−6/+22`（本节 `−15/−5/+10`）、deadlock `≥95`（本节 `≥85`）、`round_limit 9`（本节 `20`），前端整体更宽松（更易暴击、更难死局、回合更短）。**后端以本节为准，前端仅作数据参考**。注意：本节参数只经**推演验证**（数学上不崩、终局可达、无震荡），**未经实际游玩**（前端 demo 参数至少跑过 demo）；联调时统一到后端口径，并按实际体验校准，**不排除修改本节参数**（届时同步 §9 决策第 4 项）。
 
 ---
 
@@ -487,17 +489,17 @@ class Storage:
 - 重写 `contracts.py`（数据类 + 枚举 + 方法签名，即 §5）。
 - 同步 `scenario_store.py` 为 6 安全场景（SDB）、`strategy_kb.py` 为 GSB+RSB，并**冻结 §3.4 判定参数**（暴击/对峙值/红线）——这些参数子 Agent 只读。
 - 改造 `judge_agent.py`：从「调 LLM 用 strategy prompt 打分」改为「消费 GSB+RSB 确定性打分」；LLM 兜底本期不实现，只留 `enable_llm_fallback=False` 参数位（见 §9 已拍板第 1 项）。
-- 写 `storage.py` 骨架（§6.4 签名 + 建表 + migrate 桩）。
+- 写 `storage.py` 数据层（全量落地：§6.4 签名 + 建表 + migrate + 会话/回合/画像方法；即 Wave 1 的 S3，提前在 Wave 0 完成，避免把数据层基座拆给子 Agent 并行）。
 - 用几组模拟输入**推演对峙值状态机**（普通合规 / 暴击 / 红线 / 顶撞各一组），确认 `resolve` 与 `deadlock` 均可达、无震荡后再冻结参数。
 - 产出：所有子 Agent 开工前必读的契约。
 
-**Wave 1 —— 子 Agent 并行（6 个，每个只写一个文件）**
+**Wave 1 —— 子 Agent 并行（6 个文件，其中 S3 `storage.py` 已在 Wave 0 全量落地，实际并行 5 个子 Agent）**
 
 | 子 Agent | 负责文件 | 依赖（只读） |
 |---|---|---|
 | S1 知识库 | `knowledge_base.py` | contracts, scenario_store |
 | S2 记忆 | `memory.py` | contracts, config |
-| S3 数据层 | `storage.py` | contracts, config |
+| S3 数据层 | `storage.py` | contracts, config | ✅ 已在 Wave 0 全量落地 |
 | S4 扮演 | `roleplay_agent.py` | contracts, scenario_store, config |
 | S5 教学 | `teaching_agent.py` | contracts, strategy_kb, knowledge_base(S1，接口约定即可) |
 | S6 复盘 | `review_agent.py` | contracts, storage(S3，接口约定即可) |
@@ -524,9 +526,9 @@ class Storage:
 
 | 阶段 | 内容 | 交付物 | 状态 |
 |---|---|---|---|
-| 0 | 评分模块 | 7 文件，CLI 可跑 | ✅ 完成（待同步） |
-| 1 | Wave 0：契约冻结 + 场景同步 + 数据层骨架 | `contracts.py` + SDB/GSB + `storage.py` 桩 | ⬜ 待开工 |
-| 2 | Wave 1：6 子 Agent 并行 | 6 模块实现 | ⬜ |
+| 0 | 评分模块 | 7 文件，CLI 可跑 | ✅ 完成 |
+| 1 | Wave 0：契约冻结 + 场景同步 + 数据层 | `contracts.py` + SDB/GSB + `storage.py` 全量 | ✅ 完成 |
+| 2 | Wave 1：子 Agent 并行 | 5 模块实现（S3 `storage.py` 已提前完成） | ⬜ |
 | 3 | Wave 2：集成 + 验证 | `TrainerSystem` + 新 CLI 全流程 | ⬜ |
 | 4 | Wave 3：HTTP + 测试 | API + 单测 | 后置 |
 

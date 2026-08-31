@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>安全对线训练场</title>
+    <link rel="stylesheet" href="./demo/styles.css" />
+    <link rel="stylesheet" href="./upgrade.css" />
+  </head>
+  <body>
+    <main class="shell upgraded-shell">
+      <aside class="sidebar" aria-label="关卡与成长">
+        <section class="brand-panel neon-panel">
+          <p class="eyebrow">全年龄段场景化安全教育</p>
+          <h1>安全对线训练场</h1>
+          <p class="slogan">不教吵架，只教自保；把边界感与安全力练成本能。</p>
+        </section>
+
+        <section class="profile-panel">
+          <div>
+            <p class="label">训练身份</p>
+            <div class="mode-switch" role="tablist" aria-label="训练身份">
+              <button class="mode-btn active" data-audience="minor" type="button">青少年</button>
+              <button class="mode-btn" data-audience="adult" type="button">成年人</button>
+            </div>
+          </div>
+          <div class="progress-card">
+            <div>
+              <p class="label">能力等级</p>
+              <strong id="levelTitle">新手自保</strong>
+            </div>
+            <div class="xp-line">
+              <span>XP</span>
+              <strong id="xpValue">0</strong>
+            </div>
+            <div class="bar"><span id="xpBar"></span></div>
+          </div>
+          <div class="badge-list" id="badgeList"></div>
+        </section>
+
+        <section class="scenario-panel">
+          <div class="section-head">
+            <p class="label">场景关卡</p>
+            <span id="scenarioCount">0 个可训练</span>
+          </div>
+          <div class="scenario-list" id="scenarioList"></div>
+        </section>
+      </aside>
+
+      <section class="arena" aria-label="对话训练区">
+        <header class="arena-head upgraded-head">
+          <section class="mentor-stage" aria-label="坏坏的安全导师">
+            <div class="mentor-aura"></div>
+            <div class="mentor-avatar" aria-hidden="true">
+              <div class="mentor-hair h1"></div>
+              <div class="mentor-hair h2"></div>
+              <div class="mentor-hair h3"></div>
+              <div class="mentor-face">
+                <span class="mentor-brow left"></span>
+                <span class="mentor-brow right"></span>
+                <span class="mentor-eye left"></span>
+                <span class="mentor-eye right"></span>
+                <span class="mentor-mouth"></span>
+              </div>
+              <div class="mentor-coat"></div>
+            </div>
+            <div class="mentor-copy">
+              <p class="label">安全导师 · 老边</p>
+              <strong id="mentorLine">坏话我来扛，边界你来守。</strong>
+              <span>毒舌但守法，嘴硬但不教互撕。</span>
+            </div>
+          </section>
+
+          <div>
+            <p class="module-tag" id="moduleTag">国内日常边界</p>
+            <h2 id="scenarioTitle">请选择关卡</h2>
+            <p id="scenarioPremise" class="premise">选择一个场景后开始实景演练。</p>
+          </div>
+          <div class="meter-wrap">
+            <div class="meter-meta">
+              <span>对峙值</span>
+              <strong id="confrontationValue">50</strong>
+            </div>
+            <div class="danger-meter"><span id="confrontationBar"></span></div>
+          </div>
+        </header>
+
+        <section class="criteria-strip" id="criteriaStrip"></section>
+        <section class="dialogue" id="dialogueLog" aria-live="polite"></section>
+
+        <section class="coach-panel" id="coachPanel">
+          <div>
+            <p class="label">评分引擎</p>
+            <strong id="coachTitle">等待你的第一句回应</strong>
+          </div>
+          <p id="coachText">暴击标准：边界清晰、情绪稳定、合规合法、止损控场、有取证或求助意识。</p>
+        </section>
+
+        <form class="reply-box" id="replyForm">
+          <textarea id="replyInput" rows="3" placeholder="可以打字，也可以点“语音输入”说出你的回应。"></textarea>
+          <div class="reply-actions upgraded-actions">
+            <div class="voice-actions">
+              <button class="icon-btn" id="voiceBtn" type="button" title="语音输入" aria-label="语音输入">Mic</button>
+              <button class="icon-btn" id="speakBtn" type="button" title="朗读 NPC" aria-label="朗读 NPC">Talk</button>
+              <span id="voiceStatus" class="voice-status">语音待命</span>
+            </div>
+            <button class="ghost" id="hintBtn" type="button">给我一句合规提示</button>
+            <button class="primary" type="submit">发送回应</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="report" aria-label="复盘报告">
+        <section class="report-card">
+          <div class="section-head">
+            <p class="label">本局复盘</p>
+            <button class="text-btn" id="resetBtn" type="button">重开</button>
+          </div>
+          <div id="reportBody" class="empty-report">完成至少一轮回应后，这里会生成错误点、法律风险、最优话术和通关结论。</div>
+        </section>
+
+        <section class="library-card">
+          <p class="label">自研库约束</p>
+          <div class="db-grid">
+            <div><strong>SDB</strong><span>场景库</span></div>
+            <div><strong>GSB</strong><span>评分库</span></div>
+            <div><strong>RSB</strong><span>红线库</span></div>
+          </div>
+          <p class="small-copy">AI 只做场景 NPC。评分、通关、违规拦截均由本地规则库决定。</p>
+        </section>
+      </aside>
+    </main>
+
+    <script src="./demo/app.js"></script>
+    <script src="./voice.js"></script>
+  </body>
+</html>

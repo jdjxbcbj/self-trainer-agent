@@ -5,9 +5,12 @@ review_agent.py - 复盘 Agent 核心
 负责在会话终局时，根据编排层（router）传入的终局信息做确定性复盘：
 goal_achieved / achievement_score / summary / weak_points / profile_update。
 
-本期（安全对线训练场）改为确定性规则复盘，不调用 LLM：
-- 终局信息（final_stage / confrontation / crit_count）由 router 传入，
-  review 据此按 contracts §3.4 冻结规则计算，判定可复现、零延迟。
+规则复盘（确定性，默认）：终局信息（final_stage / confrontation / crit_count）由 router 传入，
+review 据此按 contracts §3.4 冻结规则计算，判定可复现、零延迟。
+LLM 兜底（可选）：enable_llm_fallback=True 且已配 LLM_API_KEY 时，仅 summary 文本改用
+DeepSeek 生成更个性化总结；判定数据（goal / 达成度 / weak_points / profile_update）不变，
+且 LLM 失败自动回退模板总结，绝不中断主流程。
+
 - 旧版「王阿姨催婚」的 CONSTRAINT_GOAL / CONSTRAINT_NAME 作废删除，
   旧版 _build_prompt / _call_llm / _parse_result / _mock_review 那套 LLM 逻辑一并删除。
 
@@ -22,7 +25,7 @@ from contracts import CRITS_TO_PASS_DEFAULT, ReviewResult, Stage
 
 
 class ReviewAgent:
-    """复盘 Agent，核心方法 review 返回 ReviewResult（确定性规则，不调 LLM）"""
+    """复盘 Agent，核心方法 review 返回 ReviewResult（规则判定，LLM 兜底可选）"""
 
     def __init__(self, enable_llm_fallback: bool = False):
         """
@@ -30,8 +33,8 @@ class ReviewAgent:
 
         参数:
             enable_llm_fallback: 是否启用 LLM 兜底生成更个性化总结。
-                本期固定为 False（不调 LLM）；仅作为参数位保留，
-                将来接入真实 LLM 生成更个性化的总结时再启用。
+                默认 False（纯规则复盘）；True 时（且已配 LLM_API_KEY）仅 summary 文本
+                用 LLM 生成，判定数据仍走规则，失败自动回退模板总结。
         """
         self.enable_llm_fallback = enable_llm_fallback
 
@@ -48,14 +51,14 @@ class ReviewAgent:
         crit_count: int,
     ) -> ReviewResult:
         """
-        复盘主流程（确定性规则，不调 LLM）。
+        复盘主流程（规则判定为主，LLM 兜底可选，仅影响 summary 文本）。
 
         参数:
             session_id: 会话ID（本期不参与业务逻辑，保留以对齐接口签名）
             user_id: 用户ID（本期不参与业务逻辑，保留以对齐接口签名）
             scenario: 场景配置字典（含 title / critsToPass 等）
             audience: 训练身份（本期不参与业务逻辑，保留以对齐接口签名）
-            history: 完整对话历史列表（本期不参与判定，保留以对齐接口签名）
+            history: 完整对话历史列表（规则判定不依赖；LLM 兜底总结时作为上下文）
             profile: 用户画像字典（可能为空 dict，用于累加 practice_count）
             final_stage: 终局阶段（contracts.Stage 常量之一，由 router 传入）
             confrontation: 最终对峙值（int，0~100）
@@ -122,11 +125,18 @@ class ReviewAgent:
             weak_points = ["对话未走到明确终局"]
         print(f"[ReviewAgent] 步骤3 - 薄弱点={weak_points}")
 
-        # 步骤4：拼装模板化总结（确定性，不调 LLM）
+        # 步骤4：拼装模板化总结（确定性）；开关打开时用 LLM 生成更个性化总结，失败回退
         summary = (
             f"整场对话对峙值从 50 走到 {confrontation}，终局为{outcome}，"
             f"共打出 {crit_count} 次暴击。"
         )
+        if self.enable_llm_fallback:
+            llm_summary = self._llm_summary(scenario, history, outcome, achievement_score, crit_count)
+            if llm_summary:
+                summary = llm_summary
+                print(f"[ReviewAgent] 步骤4 - 采用 LLM 总结：{summary}")
+            else:
+                print("[ReviewAgent] 步骤4 - LLM 未命中，回退模板总结")
         print(f"[ReviewAgent] 步骤4 - 总结：{summary}")
 
         # 步骤5：计算画像增量（practice_count 在原有基础上累加，非覆盖）
@@ -147,3 +157,19 @@ class ReviewAgent:
             weak_points=weak_points,
             profile_update=profile_update,
         )
+
+    def _llm_summary(self, scenario, history, outcome, achievement_score, crit_count):
+        """调 DeepSeek 生成更个性化的复盘总结；失败返回 None（回退模板总结）。"""
+        from llm import call_deepseek
+
+        title = scenario.get("title", "未命名场景")
+        system_prompt = (
+            f"你是「安全对线训练场」的一名教练。请根据这场关于「{title}」的训练对话，"
+            f"用 2~3 句话客观总结用户的表现：先点出做得好的地方，再指出最需要改进的一点。"
+            f"参考信息：终局={outcome}，达成度={achievement_score}/100，打出 {crit_count} 次暴击。"
+            f"语气客观、不评判对错、不重复这些数据本身。只输出总结正文，不要标题、不要列表符号。"
+        )
+        user_prompt = "\n".join(
+            [f"{'NPC' if m['role'] == 'ai' else '我'}：{m['content']}" for m in history]
+        )
+        return call_deepseek(system_prompt, user_prompt)

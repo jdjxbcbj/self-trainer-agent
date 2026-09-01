@@ -46,21 +46,26 @@ from review_agent import ReviewAgent
 class Router:
     """编排主控：串联各 Agent 完成会话开局 / 一次用户回合 / 一次会话复盘"""
 
-    def __init__(self):
+    def __init__(self, enable_llm_fallback: bool = False):
         """
         初始化并持有全部子 Agent 组件。
 
         为什么在 __init__ 就全部实例化：Router 是长生命周期的主控，
         一次初始化后反复调度，避免每个回合重复 new 对象（各 Agent 内部
         可能持有 DB 连接、知识库等有初始化成本的状态）。
+
+        参数:
+            enable_llm_fallback: 是否启用 LLM 兜底，透传给 RoleplayAgent / ReviewAgent
+                                 （JudgeAgent 保持确定性、不接 LLM，见 §9 决策 #1）。
+                                 默认 False，向后兼容。
         """
         self.scenario_store = ScenarioStore()
         self.memory = SessionMemory()
         self.storage = Storage()
         self.judge_agent = JudgeAgent()
-        self.roleplay_agent = RoleplayAgent()
+        self.roleplay_agent = RoleplayAgent(enable_llm_fallback=enable_llm_fallback)
         self.teaching_agent = TeachingAgent()
-        self.review_agent = ReviewAgent()
+        self.review_agent = ReviewAgent(enable_llm_fallback=enable_llm_fallback)
         # 会话级编排计数（只归 router 使用，见模块 docstring）
         self._crit_counts = {}    # session_id -> 累计暴击数
         self._turn_counts = {}    # session_id -> 累计回合数

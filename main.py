@@ -19,10 +19,11 @@ from router import Router
 class TrainerSystem:
     """训练系统主装配：对外统一入口，内部委托 Router 编排"""
 
-    def __init__(self):
+    def __init__(self, enable_llm_fallback: bool = False):
         # Router 内部已初始化并持有全部子 Agent（含记忆/数据层/知识库等），
         # 这里只保留几个最常用的引用，方便 CLI 直接读取历史、写 AI 消息。
-        self.router = Router()
+        # enable_llm_fallback 透传给 Router → RoleplayAgent / ReviewAgent（judge 不接 LLM）。
+        self.router = Router(enable_llm_fallback=enable_llm_fallback)
         self.scenario_store = self.router.scenario_store
         self.memory = self.router.memory
         self.storage = self.router.storage

@@ -148,6 +148,31 @@ def test_gsb_red_lines():
 
 
 # ------------------------------------------------------------------
+# LLM 兜底降级（enable_llm_fallback=True 但无 key → 回退规则）
+# ------------------------------------------------------------------
+
+def test_llm_fallback_degrades_to_rules():
+    """开关打开但无 key 时，roleplay / review 优雅降级到规则结果（不因 LLM 失败中断）"""
+    system = TrainerSystem(enable_llm_fallback=True)
+    user = _uid("t_user5")
+    sess = _uid("t_sess5")
+    system.start_session(user, sess, SCENARIO, "adult")
+
+    # roleplay：无 key → ai_reply 必须是场景 lines 里的某句预写台词（规则回退）
+    scenario = system.scenario_store.get_scenario(SCENARIO)
+    all_lines = [l for tier_lines in scenario["lines"].values() for l in tier_lines]
+
+    t1 = system.handle_turn(user, sess, SCENARIO, "adult", CRIT)
+    assert t1.ai_reply in all_lines, f"无 key 应回退规则句，实际={t1.ai_reply}"
+
+    # 打出 2 次暴击通关后，review 的 summary 应回退模板总结（非空、含「对峙值」）
+    t2 = system.handle_turn(user, sess, SCENARIO, "adult", CRIT)
+    assert t2.next_stage == Stage.RESOLVE
+    r = system.end_session(user, sess, SCENARIO, "adult")
+    assert r.summary and "对峙值" in r.summary, f"无 key 应回退模板总结，实际={r.summary}"
+
+
+# ------------------------------------------------------------------
 # standalone runner（无 pytest 时也可跑）
 # ------------------------------------------------------------------
 

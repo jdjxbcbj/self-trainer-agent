@@ -1,6 +1,6 @@
 # safe-trainer 多 Agent 后端 · 架构与开发规划 v8
 
-> 版本：v9（Wave 2 集成完成；Router 增 start_session/clear_session，教学提示改用 next_stage；在 v8 基础上）
+> 版本：v10（Wave 3 HTTP API + LLM 兜底完成；新增 api.py/llm.py，roleplay+review 接 LLM 兜底、judge 仍确定性；在 v9 基础上）
 > 状态：**Wave 0 / 1 / 2 完成；后端全流程（CLI + 落库）已跑通**
 > 日期：2026-09-01
 > 定位：回答「要做哪些模块、职责边界、接口长什么样、数据怎么存、按什么顺序开发、怎么并行开发」。批准后即作为开发依据。
@@ -546,8 +546,11 @@ class Storage:
 > - 暴击数 / 回合数是 router 私有计数（dict），未放进 `SessionMemory`——它们只被终局判定与复盘使用，不属于「共享短时记忆」。
 > - **防双源说明**：暴击数 / 回合数本可从 `turns` 表重算——`score_total ≥ CRIT_THRESHOLD 且 red_line_hits 为空 → 暴击`，`turn_index` 即回合数。router 的内存计数只是进程内热数据、**非权威**；未来做「会话重开 / 复盘校验」时应从 `storage.get_turns` 重算，以 DB 为唯一真源。
 
-**Wave 3 —— 可选，后置**
-- HTTP API 层（FastAPI）暴露给前端；单元测试；知识库 RAG；数据层查询/分析接口。
+**Wave 3 —— HTTP API + 单测已完成（RAG / 数据层查询分析接口后置）**
+- ✅ HTTP API 层（FastAPI）：`api.py` 暴露 `GET /scenarios`、`POST /sessions`、`POST /sessions/{sid}/turns`、`POST /sessions/{sid}/end`，CORS 放开（本地联调）；后端生成 session_id、前端传 user_id（随机 uid，不做登录）。
+- ✅ 单元测试：`test_backend.py`（pytest 约定 + standalone runner，6 用例）。
+- ⏳ 知识库 RAG、数据层查询/分析接口：后置，等真实游玩数据落库后再开。
+- ➕ LLM 兜底（超出原 Wave 3 范围，「全做」拍板）：`llm.py` 封装 DeepSeek，roleplay（NPC 台词）+ review（复盘总结）接 `enable_llm_fallback` 分支；judge 评分仍本地确定性、不接 LLM（§9 决策 #1）。
 
 ---
 
@@ -559,13 +562,13 @@ class Storage:
 | 1 | Wave 0：契约冻结 + 场景同步 + 数据层 | `contracts.py` + SDB/GSB + `storage.py` 全量 | ✅ 完成 |
 | 2 | Wave 1：子 Agent 并行 | 5 模块实现（S3 `storage.py` 已提前完成） | ✅ 完成 |
 | 3 | Wave 2：集成 + 验证 | `TrainerSystem` + 新 CLI 全流程 | ✅ 完成 |
-| 4 | Wave 3：HTTP + 测试 | API + 单测 | 后置 |
+| 4 | Wave 3：HTTP + 测试 | `api.py` + `test_backend.py` + `llm.py` 兜底 | ✅ 完成（RAG 后置） |
 
 ---
 
 ## 9. 决策记录（9 项全部拍板，Wave 0 直接照此执行）
 
-1. **评分口径**：**规则库优先**——`judge_agent` 默认纯走 GSB+RSB 确定性打分；LLM 兜底本期**不实现，只留 `enable_llm_fallback=False` 参数位**。数据落库后，再用真实数据判断 LLM 兜底值不值。评分权不交给模型。
+1. **评分口径**：**规则库优先**——`judge_agent` 纯走 GSB+RSB 确定性打分，**评分权不交给模型**（judge 不接 LLM）。LLM 兜底已按「全做」落地到 roleplay（NPC 台词）+ review（复盘总结）：`llm.py` 统一封装 DeepSeek，无 key / 调用失败自动回退规则；`enable_llm_fallback` 默认 False，配了 `LLM_API_KEY` 才生效。
 2. **推进方式**：按「Wave 0 → Wave 1 并行 → Wave 2 集成」推进。
 3. **爽感归属**：爽感（暴击/连击/等级/徽章）由**前端本地 demo** 承担，后端不落爽感字段；联调时再决定是否入库。（已同步 PRD §5.6）
 4. **判定参数**：§3.4 反推默认值**直接冻结**（暴击 ≥85、对峙值涨落 ±5/10/25、红线 ≤30、yield ≤25），并补「无暴击终局」（对峙值 ≤0 → 及格通关）。联调后若暴击命中率 <15%，把暴击阈值从 85 降到 80。（开发期语料摸底 `probe_gsb.py` 已测得暴击率 15%，正好踩线；真实游玩数据落库后以此为对照重测。）

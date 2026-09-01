@@ -1,8 +1,8 @@
 # safe-trainer 多 Agent 后端 · 架构与开发规划 v8
 
-> 版本：v8（Wave 1 开工前契约校正：roleplay 返回 str、review 增终局参数；在 v7 基础上）
-> 状态：**Wave 0 完成；Wave 1 开工中（5 子 Agent 并行）**
-> 日期：2026-08-31
+> 版本：v9（Wave 2 集成完成；Router 增 start_session/clear_session，教学提示改用 next_stage；在 v8 基础上）
+> 状态：**Wave 0 / 1 / 2 完成；后端全流程（CLI + 落库）已跑通**
+> 日期：2026-09-01
 > 定位：回答「要做哪些模块、职责边界、接口长什么样、数据怎么存、按什么顺序开发、怎么并行开发」。批准后即作为开发依据。
 > 配套：《PRD.md》管「做什么、为什么」，本文件管「怎么做」。
 
@@ -352,8 +352,11 @@ class KnowledgeBase:     # 🟡 换安全场景法条/方法论
     def get_legal(self, scenario_id) -> list: ...
 
 class Router:            # 🟡 换阶段判定 + 接 storage
+    def start_session(self, user_id, session_id, scenario_id, audience) -> tuple: ...
+        # 落库（upsert_user + create_session）+ 重置暴击/回合计数 + NPC 开场白；返回 (opening, teaching_card)
     def handle_turn(self, user_id, session_id, scenario_id, audience, user_response) -> TurnResult: ...
     def end_session(self, user_id, session_id, scenario_id, audience) -> ReviewResult: ...
+    def clear_session(self, session_id) -> None: ...
 ```
 
 ---
@@ -514,11 +517,19 @@ class Storage:
 2. 只实现自己那份签名，不碰别人文件，不改 `contracts.py`。
 3. 遵循样板规范：中文注释、`[模块名] 步骤N` 日志、模拟模式兜底。
 
-**Wave 2 —— 主控串行（集成 + 验证）**
+**Wave 2 —— 主控串行（集成 + 验证）** ✅ 已完成
 - 实现 `router.py`：阶段状态机（§3.4 判定参数）+ 真实调度各 Agent + 接 `storage`。
-- 把 `main.py` 的 `TrainerSystem` 接上 `router` 与 `storage`（`handle_turn` 落 turns、`end_session` 落 sessions），保留 `score()` 兼容。
-- 更新 `cli.py`：场景选项换成 6 安全场景 + 身份选择；一次回合 = 评分 + 扮演 + 教学提示；会话结束触发复盘 + 落库。
-- 端到端 CLI 测试：补数据层落库校验 + 暴击/通关/红线用例。
+- 把 `main.py` 的 `TrainerSystem` 接上 `router` 与 `storage`（`handle_turn` 落 turns、`end_session` 落 sessions），保留 `score()` 兼容（参数 `constraint` → `audience`）。
+- 更新 `cli.py`：场景选项换成 6 安全场景 + 身份选择；一次回合 = 评分 + 扮演 + 教学提示；终局自动触发复盘 + 落库。
+- 端到端测试 `e2e_wave2.py`：暴击→优秀 / r-violence→失控 / 普通合规→及格 三条终局路径 + storage 落库校验，全部通过。
+
+> 实现备注（相对 §4.1 骨架的补全）：
+> - Router 增 `start_session`（§4.1 只列了 handle_turn/end_session，未覆盖「谁开局落库 + 谁给开场白」）。
+>   `start_session` 负责 `upsert_user` + `create_session` + 重置暴击/回合计数 + 把开场白写入短时记忆 + 预生成教学卡。
+> - 教学提示 `get_hint` 传入「本回合判定后的 next_stage」而非 §4.1 步骤 4 所示顺序的「本轮前 stage」——
+>   否则终局回合（RESOLVE/DEADLOCK）拿不到收尾阶段，无法返回空提示（get_hint 契约要求收尾不提示）。
+> - 暴击数 / 回合数是 router 私有计数（dict），未放进 `SessionMemory`——它们只被终局判定与复盘使用，不属于「共享短时记忆」。
+> - **防双源说明**：暴击数 / 回合数本可从 `turns` 表重算——`score_total ≥ CRIT_THRESHOLD 且 red_line_hits 为空 → 暴击`，`turn_index` 即回合数。router 的内存计数只是进程内热数据、**非权威**；未来做「会话重开 / 复盘校验」时应从 `storage.get_turns` 重算，以 DB 为唯一真源。
 
 **Wave 3 —— 可选，后置**
 - HTTP API 层（FastAPI）暴露给前端；单元测试；知识库 RAG；数据层查询/分析接口。
@@ -531,8 +542,8 @@ class Storage:
 |---|---|---|---|
 | 0 | 评分模块 | 7 文件，CLI 可跑 | ✅ 完成 |
 | 1 | Wave 0：契约冻结 + 场景同步 + 数据层 | `contracts.py` + SDB/GSB + `storage.py` 全量 | ✅ 完成 |
-| 2 | Wave 1：子 Agent 并行 | 5 模块实现（S3 `storage.py` 已提前完成） | ⬜ |
-| 3 | Wave 2：集成 + 验证 | `TrainerSystem` + 新 CLI 全流程 | ⬜ |
+| 2 | Wave 1：子 Agent 并行 | 5 模块实现（S3 `storage.py` 已提前完成） | ✅ 完成 |
+| 3 | Wave 2：集成 + 验证 | `TrainerSystem` + 新 CLI 全流程 | ✅ 完成 |
 | 4 | Wave 3：HTTP + 测试 | API + 单测 | 后置 |
 
 ---

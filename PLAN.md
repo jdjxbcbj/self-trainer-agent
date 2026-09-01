@@ -1,7 +1,7 @@
-# safe-trainer 多 Agent 后端 · 架构与开发规划 v7
+# safe-trainer 多 Agent 后端 · 架构与开发规划 v8
 
-> 版本：v7（补「前后端数值分叉」已知事项 + Wave 0 落地校正；在 v6 基础上）
-> 状态：**Wave 0 完成；9 项决策全部拍板；可开工 Wave 1（前后端数值分叉待联调统一）**
+> 版本：v8（Wave 1 开工前契约校正：roleplay 返回 str、review 增终局参数；在 v7 基础上）
+> 状态：**Wave 0 完成；Wave 1 开工中（5 子 Agent 并行）**
 > 日期：2026-08-31
 > 定位：回答「要做哪些模块、职责边界、接口长什么样、数据怎么存、按什么顺序开发、怎么并行开发」。批准后即作为开发依据。
 > 配套：《PRD.md》管「做什么、为什么」，本文件管「怎么做」。
@@ -229,7 +229,7 @@ opening（开场） → pressure（施压对峙） → [用户回应]
 Router.handle_turn：
   1. 读 SessionMemory：历史 + 对峙值/层级 + 阶段
   2. 评分：judge_agent.judge(...) → ScoreResult（GSB 维度 + RSB 红线命中）
-  3. 扮演：roleplay_agent.reply(...) → (NPC 回应, 下一轮对峙值/层级)
+  3. 更新对峙值 + 扮演：next_confrontation = clamp(当前对峙值 + compute_confrontation_delta(得分, 红线))；roleplay_agent.reply(...) → NPC 台词
   4. 教学：teaching_agent.get_hint(...) → 合规提示（可空，规则/缓存）
   5. 判定下一阶段（对峙值状态机 + 红线）
   6. 写记忆：user 回应 + NPC 回应 + 下一轮对峙值/层级 + next_stage
@@ -315,15 +315,18 @@ class JudgeAgent:        # 🟡 同步评分口径
     def judge(self, scenario, audience, history, user_response) -> ScoreResult: ...
 
 class RoleplayAgent:     # 🟡 换对峙值模型
-    def reply(self, scenario, audience, history, user_response, confrontation) -> tuple[str, int]: ...
-    # 返回 (NPC 回应, 下一轮对峙值)
+    def reply(self, scenario, audience, history, user_response, confrontation) -> str: ...
+    # 返回 NPC 台词；对峙值更新由 router 按 §3.4 计算（得分驱动），roleplay 不负责
 
 class TeachingAgent:     # 🟡 换合规提示
     def get_card(self, scenario_id, audience) -> TeachingCard: ...
     def get_hint(self, scenario, audience, stage, history) -> str: ...
 
 class ReviewAgent:       # ✅ 结构复用，口径同步
-    def review(self, session_id, user_id, scenario, audience, history, profile) -> ReviewResult: ...
+    def review(self, session_id, user_id, scenario, audience, history, profile,
+               final_stage, confrontation, crit_count) -> ReviewResult: ...
+    # 终局信息（final_stage/confrontation/crit_count）由 router 传入，
+    # review 据此按 §3.4 确定性计算 goal_achieved / achievement_score（本期不调 LLM）
 
 class SessionMemory:     # 🟡 扩展
     def add_message(self, session_id, role, content): ...

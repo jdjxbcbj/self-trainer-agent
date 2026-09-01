@@ -24,7 +24,7 @@ body {
   background: rgba(14, 18, 23, 0.88);
 }
 
-.brand-panel, .profile-panel, .scenario-panel, .report-card, .library-card, .coach-panel, .dialogue, .reply-box, .meter-wrap {
+.brand-panel, .profile-panel, .scenario-panel, .report-card, .library-card, .meter-wrap, .chat {
   background: rgba(23, 28, 36, 0.92);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
 }
@@ -249,6 +249,199 @@ body {
   align-items: center;
 }
 
+/* ===== 侧边栏 · 关卡与成长 ===== */
+.brand-panel h1 { font-size: 24px; margin: 4px 0 8px; }
+.brand-panel .slogan { font-size: 13px; }
+
+.panel-divider {
+  height: 1px;
+  margin: 14px 0;
+  background: var(--line);
+}
+
+.profile-panel { padding: 14px 16px; }
+
+.mode-btn.active {
+  background: rgba(120, 209, 79, 0.14);
+  color: #d9f2cf;
+  box-shadow: inset 0 0 0 1px rgba(120, 209, 79, 0.35);
+}
+
+.progress-card { margin-top: 0; }
+.xp-line { align-items: flex-end; }
+.xp-num { display: flex; align-items: baseline; gap: 4px; }
+.xp-num strong { font-size: 20px; color: var(--primary); }
+.xp-num span { color: var(--muted); font-size: 12px; }
+
+.badge-block .label { margin-bottom: 10px; }
+.badge-count { color: var(--muted); font-size: 12px; }
+.badge-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 0;
+}
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  background: rgba(32, 39, 53, 0.4);
+  transition: border-color .2s, color .2s, box-shadow .2s;
+}
+.badge::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3a4454;
+}
+.badge.earned {
+  color: #f0e3b2;
+  border-color: rgba(240, 195, 81, 0.5);
+  background: rgba(240, 195, 81, 0.1);
+  box-shadow: 0 0 14px rgba(240, 195, 81, 0.12);
+}
+.badge.earned::before {
+  background: var(--gold);
+  box-shadow: 0 0 8px rgba(240, 195, 81, 0.8);
+}
+
+/* ===== 场景卡片 ===== */
+.scenario-list { gap: 8px; }
+.scenario-card {
+  padding: 11px 12px;
+  border-radius: 8px;
+  transition: border-color .18s, box-shadow .18s;
+}
+.scenario-card:hover:not(:disabled) { border-color: rgba(120, 209, 79, 0.45); }
+.scenario-card.active {
+  border-color: var(--primary);
+  box-shadow: inset 3px 0 0 var(--primary), 0 0 20px rgba(120, 209, 79, 0.12);
+}
+.scenario-card .sc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.scenario-card .sc-row strong { display: inline; margin: 0; font-size: 13.5px; line-height: 1.3; }
+.scenario-card .sc-module {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.scenario-card .sc-lock { color: var(--muted); font-size: 13px; }
+.scenario-card .risk-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.scenario-card .risk-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.scenario-card .risk-low { color: var(--good); background: rgba(120, 209, 79, 0.12); }
+.scenario-card .risk-medium { color: var(--warn); background: rgba(247, 184, 75, 0.12); }
+.scenario-card .risk-high { color: var(--danger); background: rgba(255, 90, 95, 0.14); }
+
+/* ===== 对话区：评分引擎 + 对话 + 输入框 合并为一张聊天卡 ===== */
+.arena { grid-template-rows: auto auto minmax(0, 1fr); }
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.chat .coach-panel {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+}
+.chat .coach-panel .coach-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.chat .coach-panel .coach-head .label { margin: 0; }
+.chat .coach-panel .coach-head strong { font-size: 14px; color: #f8fff2; }
+.chat .coach-panel .coach-text {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.chat .dialogue {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.chat .reply-box {
+  flex: 0 0 auto;
+  padding: 12px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+}
+.chat .reply-box textarea {
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--primary);
+}
+.chat .reply-box textarea::placeholder {
+  color: rgba(168, 179, 166, 0.55);
+}
+
+/* 场景评分维度 chips 暗色化 */
+.chip {
+  background: rgba(32, 39, 53, 0.6);
+  border-color: rgba(120, 209, 79, 0.22);
+  color: #d7e2d3;
+}
+
 @keyframes pulseAura {
   0%, 100% { transform: scale(.96); opacity: .75; }
   50% { transform: scale(1.06); opacity: 1; }
@@ -265,4 +458,7 @@ body {
   .upgraded-head > div:nth-child(2) { flex: 1 1 100%; order: 2; }
   .upgraded-head .meter-wrap { flex: 1 1 100%; order: 3; }
   .voice-actions { min-width: 0; flex-wrap: wrap; }
+  .chat { overflow: visible; }
+  .chat .coach-panel { flex-direction: column; align-items: stretch; gap: 6px; }
+  .chat .coach-panel .coach-text { display: block; -webkit-line-clamp: unset; }
 }

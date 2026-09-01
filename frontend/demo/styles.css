@@ -41,6 +41,18 @@ button { cursor: pointer; }
   overflow-y: auto;
 }
 
+.backend-status {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.backend-status.error { background: #ffe1dc; color: #8f2119; border-color: #f2c4bd; }
+.backend-status.loading { background: #fff1cb; color: #795008; border-color: #ead8bd; }
+
 .report {
   border-right: 0;
   border-left: 1px solid var(--line);
@@ -209,9 +221,6 @@ button { cursor: pointer; }
   flex: 1;
   line-height: 1.5;
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .reply-box {

@@ -7,10 +7,15 @@ config.py - 全局配置
 """
 
 # ===== LLM 相关配置 =====
-# DeepSeek API Key，优先从环境变量 LLM_API_KEY 读取，读不到则为空字符串（模拟评分模式）。
-# 设置方式（Windows PowerShell）：$env:LLM_API_KEY = "sk-xxxx"
-# 用户填写后（例如 "sk-xxxx"），评分Agent会调用真实 DeepSeek API 打分。
+# DeepSeek API Key：先读环境变量 LLM_API_KEY，再尝试加载本地 .env 文件（dotenv）。
+# .env 已被 .gitignore 排除（勿提交）；.env.example 是模板（只含占位符，不含真 key）。
 import os
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # 读取项目根目录 .env（若存在），不覆盖已设置的环境变量
+except ImportError:
+    pass  # 未装 python-dotenv 时退化为「仅读环境变量」，不影响规则兜底
 
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 

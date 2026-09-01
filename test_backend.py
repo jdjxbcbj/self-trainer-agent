@@ -17,6 +17,7 @@ import traceback
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+import config
 from contracts import Stage
 from main import TrainerSystem
 from strategy_kb import StrategyKB
@@ -153,23 +154,29 @@ def test_gsb_red_lines():
 
 def test_llm_fallback_degrades_to_rules():
     """开关打开但无 key 时，roleplay / review 优雅降级到规则结果（不因 LLM 失败中断）"""
-    system = TrainerSystem(enable_llm_fallback=True)
-    user = _uid("t_user5")
-    sess = _uid("t_sess5")
-    system.start_session(user, sess, SCENARIO, "adult")
+    # 强制无 key，保证确定性地走「降级到规则」路径，与本地是否配了 .env 无关
+    saved_key = config.LLM_API_KEY
+    config.LLM_API_KEY = ""
+    try:
+        system = TrainerSystem(enable_llm_fallback=True)
+        user = _uid("t_user5")
+        sess = _uid("t_sess5")
+        system.start_session(user, sess, SCENARIO, "adult")
 
-    # roleplay：无 key → ai_reply 必须是场景 lines 里的某句预写台词（规则回退）
-    scenario = system.scenario_store.get_scenario(SCENARIO)
-    all_lines = [l for tier_lines in scenario["lines"].values() for l in tier_lines]
+        # roleplay：无 key → ai_reply 必须是场景 lines 里的某句预写台词（规则回退）
+        scenario = system.scenario_store.get_scenario(SCENARIO)
+        all_lines = [l for tier_lines in scenario["lines"].values() for l in tier_lines]
 
-    t1 = system.handle_turn(user, sess, SCENARIO, "adult", CRIT)
-    assert t1.ai_reply in all_lines, f"无 key 应回退规则句，实际={t1.ai_reply}"
+        t1 = system.handle_turn(user, sess, SCENARIO, "adult", CRIT)
+        assert t1.ai_reply in all_lines, f"无 key 应回退规则句，实际={t1.ai_reply}"
 
-    # 打出 2 次暴击通关后，review 的 summary 应回退模板总结（非空、含「对峙值」）
-    t2 = system.handle_turn(user, sess, SCENARIO, "adult", CRIT)
-    assert t2.next_stage == Stage.RESOLVE
-    r = system.end_session(user, sess, SCENARIO, "adult")
-    assert r.summary and "对峙值" in r.summary, f"无 key 应回退模板总结，实际={r.summary}"
+        # 打出 2 次暴击通关后，review 的 summary 应回退模板总结（非空、含「对峙值」）
+        t2 = system.handle_turn(user, sess, SCENARIO, "adult", CRIT)
+        assert t2.next_stage == Stage.RESOLVE
+        r = system.end_session(user, sess, SCENARIO, "adult")
+        assert r.summary and "对峙值" in r.summary, f"无 key 应回退模板总结，实际={r.summary}"
+    finally:
+        config.LLM_API_KEY = saved_key
 
 
 # ------------------------------------------------------------------

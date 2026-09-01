@@ -547,7 +547,7 @@ class Storage:
 > - **防双源说明**：暴击数 / 回合数本可从 `turns` 表重算——`score_total ≥ CRIT_THRESHOLD 且 red_line_hits 为空 → 暴击`，`turn_index` 即回合数。router 的内存计数只是进程内热数据、**非权威**；未来做「会话重开 / 复盘校验」时应从 `storage.get_turns` 重算，以 DB 为唯一真源。
 
 **Wave 3 —— HTTP API + 单测已完成（RAG / 数据层查询分析接口后置）**
-- ✅ HTTP API 层（FastAPI）：`api.py` 暴露 `GET /scenarios`、`POST /sessions`、`POST /sessions/{sid}/turns`、`POST /sessions/{sid}/end`，CORS 放开（本地联调）；后端生成 session_id、前端传 user_id（随机 uid，不做登录）。
+- ✅ HTTP API 层（FastAPI）：`api.py` 暴露 `GET /scenarios`、`POST /sessions`、`POST /sessions/{sid}/turns`、`POST /sessions/{sid}/end`，CORS 放开（本地联调）；后端生成 session_id、前端传 user_id（随机 uid，不做登录）。四端点契约见 `API.md`（已冻结）。
 - ✅ 单元测试：`test_backend.py`（pytest 约定 + standalone runner，6 用例）。
 - ⏳ 知识库 RAG、数据层查询/分析接口：后置，等真实游玩数据落库后再开。
 - ➕ LLM 兜底（超出原 Wave 3 范围，「全做」拍板）：`llm.py` 封装 DeepSeek，roleplay（NPC 台词）+ review（复盘总结）接 `enable_llm_fallback` 分支；judge 评分仍本地确定性、不接 LLM（§9 决策 #1）。

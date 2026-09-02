@@ -25,6 +25,10 @@ LLM_BASE_URL = "https://api.deepseek.com"
 # 使用的模型名
 LLM_MODEL = "deepseek-chat"
 
+# LLM 兜底开关（默认关）：Phase 4 B1。默认 False 走规则路径（瞬时）；
+# 设 LLM_FALLBACK_ENABLED=1 才启用 LLM 兜底（有 key 用 LLM、无 key 回退规则）。
+LLM_FALLBACK_ENABLED = os.environ.get("LLM_FALLBACK_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
 # ===== 评分相关配置 =====
 # 总分范围
 SCORE_MIN = 0

@@ -13,7 +13,7 @@ api.py - HTTP API 层（Wave 3）
 - 用户区分：不做登录，由前端用随机 uid（localStorage）当 user_id 传入，见 PLAN §9。
 - 会话归属：后端在 start 时生成 session_id，并在进程内记录 session_id -> (user_id/scenario/audience)，
   后续 turn/end 只需带 session_id。
-- LLM 兜底：TrainerSystem 以 enable_llm_fallback=True 启动；无 key 时 llm.py 自动回退规则，
+- LLM 兜底：默认关（规则路径瞬时）；设 LLM_FALLBACK_ENABLED=1 才启用，无 key 时自动回退规则，
   不影响接口。
 - 并发：本地单用户联调为主，用一把进程内锁串行化，避免 memory/计数器竞态；上云前需改造为
   请求级隔离（多用户/多会话并发时，当前 Router 的进程内状态并不隔离）。
@@ -34,6 +34,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import config
 from contracts import Audience
 from main import TrainerSystem
 
@@ -50,8 +51,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 长生命周期训练系统（进程内单例）。enable_llm_fallback=True：有 key 用 LLM、无 key 回退规则。
-system = TrainerSystem(enable_llm_fallback=True)
+# 长生命周期训练系统（进程内单例）。LLM 兜底默认关（规则路径瞬时）；
+# 设 LLM_FALLBACK_ENABLED=1 才启用（有 key 用 LLM、无 key 回退规则）。
+system = TrainerSystem(enable_llm_fallback=config.LLM_FALLBACK_ENABLED)
 
 # 会话上下文：session_id -> {"user_id", "scenario_id", "audience"}（仅本进程内存，重启即失）
 _sessions = {}
@@ -139,4 +141,5 @@ def end_session(session_id: str):
         result = system.end_session(
             ctx["user_id"], session_id, ctx["scenario_id"], ctx["audience"]
         )
+        _sessions.pop(session_id, None)
     return asdict(result)

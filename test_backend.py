@@ -138,6 +138,12 @@ def test_gsb_red_lines():
     assert kb.detect_red_line("你们国家都这样！")["id"] == "r-foreign"
     assert kb.detect_red_line("我理解你，请按规则处理。") is None
 
+    # B2：否定词过滤 ——「我不会打你」「别动手」不算暴力威胁，但正句仍拦截
+    assert kb.detect_red_line("我不会打你") is None
+    assert kb.detect_red_line("别动手，保持距离") is None
+    assert kb.detect_red_line("我不会曝光你身份证") is None
+    assert kb.detect_red_line("我打你")["id"] == "r-violence"
+
     # 一票否决：命中红线 → total_score 30、记 red_line_hits
     from judge_agent import JudgeAgent
     from scenario_store import ScenarioStore

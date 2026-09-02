@@ -15,6 +15,7 @@ strategy_kb.py - 评分库 GSB + 红线库 RSB
 """
 
 import copy
+import re
 
 
 # ============================================================
@@ -26,7 +27,7 @@ POSITIVE_DIMENSIONS = [
     {"id": "g-calm", "name": "保持冷静", "weight": 14,
      "keywords": ["我理解", "我听到", "冷静", "先停", "我们先", "I hear", "I understand"]},
     {"id": "g-legal", "name": "合规合法", "weight": 18,
-     "keywords": ["规则", "法律", "民法典", "消费者权益", "物业", "学校", "平台", "公安", "report", "security"]},
+     "keywords": ["规则", "法律", "民法典", "消费者权益", "规定", "依法", "条例", "法规", "report", "security"]},
     {"id": "g-deescalate", "name": "降温控场", "weight": 16,
      "keywords": ["保持距离", "离开", "不争吵", "不升级", "按事实", "下一步", "step away"]},
     {"id": "g-evidence", "name": "取证意识", "weight": 14,
@@ -34,7 +35,8 @@ POSITIVE_DIMENSIONS = [
     {"id": "g-polite", "name": "礼貌", "weight": 8,
      "keywords": ["请", "谢谢", "麻烦", "please"]},
     {"id": "g-risk", "name": "求助意识", "weight": 12,
-     "keywords": ["求助", "找老师", "家长", "消协", "报警", "工作人员", "staff"]},
+     "keywords": ["求助", "找老师", "老师", "家长", "消协", "报警", "工作人员",
+                  "物业", "学校", "平台", "公安", "保安", "警察", "居委会", "staff"]},
 ]
 
 # ============================================================
@@ -74,6 +76,25 @@ RED_LINES = [
 ]
 
 
+# 否定词（B2）：红线关键词紧邻这些词表示「不做」，不算违规
+NEGATION_WORDS = ["不会", "不要", "不想", "不能", "不敢", "没有", "别再", "无需", "绝不",
+                  "不", "别", "没", "莫", "勿", "无"]
+
+
+def _is_negated(lower, idx):
+    """关键词在 lower[idx] 处命中，判断其是否被紧邻否定词否定。"""
+    prefix = lower[max(0, idx - 2):idx]
+    return any(prefix.endswith(w) for w in NEGATION_WORDS)
+
+
+def _contains_non_negated(lower, kw):
+    """kw 在 lower 中至少出现一次且未被否定。"""
+    for m in re.finditer(re.escape(kw), lower):
+        if not _is_negated(lower, m.start()):
+            return True
+    return False
+
+
 class StrategyKB:
     """评分库 + 红线库，提供维度/红线数据与关键词匹配工具"""
 
@@ -108,11 +129,15 @@ class StrategyKB:
     def detect_red_line(self, text):
         """检测文本是否命中红线（一票否决）。
 
+        否定词过滤（B2）：关键词紧邻「不/别/不要/不会/没」等否定词时视为否定，
+        不再一票否决（如「我不会打你」「别动手」不算暴力威胁）。
+
         返回:
             dict: 命中的红线配置；未命中返回 None。
         """
         lower = text.lower()
         for r in RED_LINES:
-            if any(k.lower() in lower for k in r["keywords"]):
-                return r
+            for kw in r["keywords"]:
+                if _contains_non_negated(lower, kw.lower()):
+                    return r
         return None

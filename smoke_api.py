@@ -87,6 +87,11 @@ def test_http():
     review = r.json()
     print(f"HTTP POST end -> {r.status_code}，achieved={review['goal_achieved']}")
 
+    # B3：结束后会话已清理，再调 /turns 应 404
+    r = client.post(f"/sessions/{sid}/turns", json={"user_response": "再试一次"})
+    print(f"HTTP 结束后 turns -> {r.status_code}（应 404）")
+    assert r.status_code == 404
+
     r = client.post("/sessions/nope/turns", json={"user_response": "hi"})
     print(f"HTTP 未知会话 -> {r.status_code}")
 
